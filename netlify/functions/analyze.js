@@ -1,3 +1,16 @@
+// ============================================================================
+// SUPERSEDED — kept for rollback/reference only. Not called by index.html.
+// ============================================================================
+// This is the v1 crawl engine: a plain fetch(), no JavaScript execution.
+// It cannot read client-rendered sites (React/Vue SPAs with no prerendering —
+// e.g. rerev.io) because the real content only exists in the DOM after JS
+// runs, which this engine never triggers. That gap is fixed in v2:
+//   netlify/functions/analyze-background.js  (headless Chromium rendering)
+//   netlify/functions/analyze-status.js      (polling endpoint for the result)
+// index.html now calls the v2 background+poll flow. This file is left in
+// place in case the v2 engine needs to be rolled back for any reason.
+// ============================================================================
+
 // Netlify Function: POST /api/analyze
 // T029 — MOFU Content Analyzer. Crawls a site, classifies every substantive
 // page into one of five content-capsule JOBS (or Unmatched), scores each job
@@ -13,10 +26,7 @@
 //
 // KNOWN CONSTRAINT: Netlify's default function timeout (10s on most plans)
 // caps how much a single invocation can crawl. MAX_PAGES and PER_PAGE_TIMEOUT_MS
-// below are tuned to stay under that for a normal marketing-site blog. For a
-// much larger site, this needs a background function (netlify/functions/*-background.js,
-// 15 min budget) instead of a synchronous one — flagging as a v1 limitation,
-// not solved here.
+// below are tuned to stay under that for a normal marketing-site blog.
 //
 // ALSO KNOWN: sites that render content client-side (React/Vue SPAs with no
 // prerendering) will crawl as empty shells here, since this does a plain
@@ -138,11 +148,6 @@ async function fetchWithTimeout(url, ms) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
   try {
-    // Cache-busting query param: many hosts (Netlify, Framer, Vercel, Cloudflare, etc.)
-    // cache pages at the edge keyed by exact URL, and a no-cache *request* header alone
-    // does not force that edge cache to revalidate — only the origin's own response
-    // headers control that. Appending a unique param guarantees a fresh edge hit every
-    // time, which is what fixes the "site shows an old version after a real edit" bug.
     const bustUrl = url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now();
     const r = await fetch(bustUrl, {
       signal: ctrl.signal,
@@ -176,7 +181,6 @@ async function crawl(seedUrl) {
     } catch { /* homepage optional */ }
   }
 
-  // Expand any index-like page (e.g. /blog) one level to pick up individual posts.
   const indexLike = [...candidateLinks].filter((l) => INDEX_HINT.test(new URL(l).pathname)).slice(0, 5);
   const expandResults = await Promise.allSettled(
     indexLike.map((l) => fetchWithTimeout(l, PER_PAGE_TIMEOUT_MS))
@@ -201,9 +205,6 @@ async function crawl(seedUrl) {
   fetched.forEach((res, i) => {
     if (res.status === 'fulfilled' && res.value.ok) {
       const html = res.value.text;
-      // Belt-and-suspenders: even if a non-HTML response somehow reaches this
-      // point (e.g. a redirect to a file, or a link filter miss), refuse to
-      // treat anything that isn't actually an HTML document as a page.
       if (!looksLikeHtml(html)) {
         skipped.push({ url: pageUrls[i], title: pageUrls[i], reason: 'not_html' });
         return;
@@ -212,8 +213,6 @@ async function crawl(seedUrl) {
       if (text.length > 200) {
         pages.push({ url: pageUrls[i], title: extractTitle(html) || pageUrls[i], text });
       } else {
-        // Found the URL, but there was effectively no readable text after stripping
-        // tags — almost always a client-rendered page with no prerendering.
         skipped.push({ url: pageUrls[i], title: extractTitle(html) || pageUrls[i], reason: 'empty_after_render' });
       }
     } else {
@@ -310,7 +309,7 @@ exports.handler = async (event) => {
       error: 'Crawled the site but found no readable content pages.',
       urls_found,
       skipped: skipped.slice(0, 20).map((s) => ({ url: s.url, reason: s.reason })),
-      hint: 'If urls_found is > 0 but every one is "empty_after_render", this site likely renders content client-side (React/Vue/etc.) with no prerendering — this crawler cannot execute JavaScript, so it sees an empty shell for every page.',
+      hint: 'If urls_found is > 0 but every one is "empty_after_render", this site likely renders content client-side (React/Vue/etc.) with no prerendering — this crawler cannot execute JavaScript, so it sees an empty shell for every page. Use the v2 engine (analyze-background.js) instead — it renders with headless Chromium.',
     });
   }
 
@@ -350,7 +349,7 @@ exports.handler = async (event) => {
     source_url: seedUrl,
     jobs: {},
     unmatched: [],
-    page_inventory: [], // every crawled page, one row each, in one place
+    page_inventory: [],
   };
 
   JOB_ORDER.forEach((key) => {
