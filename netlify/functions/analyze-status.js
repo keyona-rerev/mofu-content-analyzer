@@ -5,9 +5,14 @@
 //   {status: "error", error: "..."}    — finished with an error
 // The front end polls this every ~2s after kicking off a background job.
 
-const { getStore } = require('@netlify/blobs');
+const { connectLambda, getStore } = require('@netlify/blobs');
 
 exports.handler = async (event) => {
+  // Blobs is NOT auto-configured for Lambda-compatibility (exports.handler)
+  // functions — connectLambda(event) must run before getStore, or every call
+  // dies with MissingBlobsEnvironmentError. (Confirmed live 2026-07-21.)
+  connectLambda(event);
+
   const jobId = String((event.queryStringParameters || {}).id || '').trim();
   if (!jobId) {
     return { statusCode: 400, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Missing job id.' }) };
