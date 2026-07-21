@@ -1,11 +1,11 @@
 {
   "name": "mofu-content-analyzer",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "T029 - MOFU Content Analyzer. Renders a site with headless Chromium, crawls it, and scores its content against the five-job content-capsule framework.",
   "private": true,
   "dependencies": {
     "@netlify/blobs": "^8.1.0",
-    "@sparticuz/chromium": "^129.0.0",
-    "puppeteer-core": "^23.5.0"
+    "@sparticuz/chromium": "^149.0.0",
+    "puppeteer-core": "^25.0.4"
   }
 }
