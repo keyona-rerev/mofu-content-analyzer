@@ -1,0 +1,6 @@
+{
+  "name": "mofu-content-analyzer",
+  "version": "1.0.0",
+  "description": "T029 - MOFU Content Analyzer. Crawls a site and scores its content against the five-job content-capsule framework.",
+  "private": true
+}
