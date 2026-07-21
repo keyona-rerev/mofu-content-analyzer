@@ -23,6 +23,9 @@
 // fetch() and never executes JavaScript. Pages under ~200 chars of extracted
 // text are dropped before they ever reach Claude — if pages_crawled comes
 // back at 0 or suspiciously low for a real site, that's almost certainly why.
+// On a JS-rendered site, the ONLY hrefs present in the raw HTML are usually
+// non-navigation ones (stylesheets, font preconnects, favicons) — see
+// ASSET_EXT below, which exists specifically to keep those out of the crawl.
 
 const json = (statusCode, obj) => ({
   statusCode,
@@ -66,6 +69,13 @@ const MIN_PER_JOB = 3;
 const BLOCK_PATH = /\/(login|signin|signup|terms|privacy|cookie-policy|cart|checkout)(\/|$|\?)/i;
 const INDEX_HINT = /\/(blog|resources|insights|articles|content|news|case-studies|guides|learn)(\/|$|\?)/i;
 
+// Non-page asset extensions. These can show up as an href even inside an <a>
+// tag (e.g. a direct PDF download link), and ALWAYS show up as an href on
+// non-anchor tags (<link>, <script>) which extractLinks now excludes anyway —
+// this is a second, independent filter so a stray asset link can never reach
+// the crawl list even if it's sitting inside a real <a href="...">.
+const ASSET_EXT = /\.(css|js|mjs|json|xml|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|pdf|zip|mp4|mp3|wav|avif)$/i;
+
 function normalizeUrl(href, base) {
   try {
     const u = new URL(href, base);
@@ -78,7 +88,12 @@ function normalizeUrl(href, base) {
 
 function extractLinks(html, baseUrl, hostname) {
   const links = new Set();
-  const re = /href\s*=\s*["']([^"'#]+)["']/gi;
+  // Only match <a ... href="...">, not any tag with an href (which previously
+  // also matched <link> stylesheet/preconnect tags and <script> src-adjacent
+  // markup) — a raw, un-rendered SPA page's <head> is full of those, and on a
+  // client-rendered site they can be the ONLY hrefs present, which was
+  // silently feeding CSS/font files into the crawl as if they were pages.
+  const re = /<a\b[^>]*\bhref\s*=\s*["']([^"'#]+)["'][^>]*>/gi;
   let m;
   while ((m = re.exec(html))) {
     const abs = normalizeUrl(m[1], baseUrl);
@@ -87,6 +102,7 @@ function extractLinks(html, baseUrl, hostname) {
       const u = new URL(abs);
       if (u.hostname.replace(/^www\./, '') !== hostname.replace(/^www\./, '')) continue;
       if (BLOCK_PATH.test(u.pathname)) continue;
+      if (ASSET_EXT.test(u.pathname)) continue;
       links.add(abs);
     } catch { /* skip */ }
   }
@@ -96,6 +112,10 @@ function extractLinks(html, baseUrl, hostname) {
 function extractTitle(html) {
   const m = html.match(/<title[^>]*>([^<]*)<\/title>/i);
   return m ? m[1].trim().slice(0, 140) : '';
+}
+
+function looksLikeHtml(html) {
+  return /<html[\s>]/i.test(html) || /<!doctype\s+html/i.test(html);
 }
 
 function extractText(html) {
@@ -181,6 +201,13 @@ async function crawl(seedUrl) {
   fetched.forEach((res, i) => {
     if (res.status === 'fulfilled' && res.value.ok) {
       const html = res.value.text;
+      // Belt-and-suspenders: even if a non-HTML response somehow reaches this
+      // point (e.g. a redirect to a file, or a link filter miss), refuse to
+      // treat anything that isn't actually an HTML document as a page.
+      if (!looksLikeHtml(html)) {
+        skipped.push({ url: pageUrls[i], title: pageUrls[i], reason: 'not_html' });
+        return;
+      }
       const text = extractText(html);
       if (text.length > 200) {
         pages.push({ url: pageUrls[i], title: extractTitle(html) || pageUrls[i], text });
