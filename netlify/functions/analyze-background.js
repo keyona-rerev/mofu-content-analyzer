@@ -23,7 +23,7 @@
 // to Blobs under that job id -> index.html polls /api/analyze-status?id=...
 // until status is "done" or "error".
 
-const { getStore } = require('@netlify/blobs');
+const { connectLambda, getStore } = require('@netlify/blobs');
 const chromium = require('@sparticuz/chromium');
 const puppeteer = require('puppeteer-core');
 
@@ -277,6 +277,11 @@ async function classify(pages) {
 }
 
 exports.handler = async (event) => {
+  // Blobs is NOT auto-configured for Lambda-compatibility (exports.handler)
+  // functions — connectLambda(event) must run before getStore, or the whole
+  // handler dies with MissingBlobsEnvironmentError before it can write
+  // anything, leaving the client polling forever. (Confirmed live 2026-07-21.)
+  connectLambda(event);
   const store = getStore('mofu-analyzer-jobs');
 
   let body;
