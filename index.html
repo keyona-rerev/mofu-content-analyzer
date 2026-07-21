@@ -55,6 +55,44 @@ h1 em{ font-style:italic; font-weight:400; color:var(--green-deep); }
 .job-role{ display:flex; gap:12px; align-items:baseline; font-size:13.5px; color:var(--ink); background:var(--cream); border:1px solid var(--line); border-radius:6px; padding:10px 14px; }
 .job-role b{ font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:0.06em; text-transform:uppercase; color:var(--green-accent); font-weight:600; white-space:nowrap; }
 
+/* capsule toggle — full waypoint framing, collapsed by default */
+.capsule-toggle{ margin-top:22px; border-top:1px solid var(--line); padding-top:18px; }
+.capsule-toggle summary{
+  cursor:pointer; list-style:none; display:flex; align-items:center; gap:8px;
+  font-family:'IBM Plex Mono', monospace; font-size:12px; font-weight:600; letter-spacing:0.06em;
+  text-transform:uppercase; color:var(--green-accent);
+}
+.capsule-toggle summary::-webkit-details-marker{ display:none; }
+.capsule-toggle summary::before{ content:'▸'; font-size:11px; transition:transform 0.15s ease; }
+.capsule-toggle[open] summary::before{ transform:rotate(90deg); }
+.capsule-toggle-body{ margin-top:20px; }
+.waypoint-strip{ display:flex; gap:0; margin-bottom:22px; flex-wrap:wrap; }
+.waypoint-marker{ flex:1; min-width:150px; text-align:center; padding:0 6px; position:relative; }
+.waypoint-marker:not(:last-child)::after{
+  content:''; position:absolute; top:9px; right:-4px; width:calc(100% - 10px); height:1px;
+  background:var(--line); z-index:0;
+}
+.waypoint-dot{ width:18px; height:18px; border-radius:50%; background:var(--green-accent); margin:0 auto 10px; position:relative; z-index:1; border:3px solid var(--card); }
+.waypoint-index{ font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:0.08em; color:var(--green-accent); margin-bottom:4px; }
+.waypoint-state{ font-size:12px; color:var(--ink-soft); line-height:1.4; max-width:16ch; margin:0 auto; }
+.waypoint-cards{ display:flex; flex-direction:column; gap:14px; }
+.waypoint-card{ background:var(--cream); border:1px solid var(--line); border-radius:8px; padding:20px 24px; }
+.wc-tag{ font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:0.08em; text-transform:uppercase; color:var(--green-accent); font-weight:600; margin-bottom:6px; }
+.wc-title{ font-family:'Fraunces', serif; font-weight:600; font-size:17px; color:var(--ink); margin-bottom:4px; }
+.wc-audience{ font-size:12.5px; color:var(--ink-soft); font-style:italic; margin-bottom:10px; }
+.wc-desc{ font-size:13.5px; color:var(--ink); line-height:1.65; margin-bottom:12px; }
+.wc-sample{ background:var(--card); border:1px solid var(--line); border-radius:6px; padding:12px 14px; margin-bottom:10px; }
+.wc-sample-label{ font-family:'IBM Plex Mono', monospace; font-size:9.5px; letter-spacing:0.08em; text-transform:uppercase; color:var(--ink-soft); margin-bottom:4px; }
+.wc-sample-title{ font-size:13px; font-weight:600; color:var(--ink); margin-bottom:2px; }
+.wc-sample-format{ font-size:11.5px; color:var(--green-accent); font-family:'IBM Plex Mono', monospace; }
+.wc-job{ font-size:12.5px; color:var(--ink-soft); line-height:1.55; }
+.wc-job b{ color:var(--green-deep); font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:0.06em; text-transform:uppercase; margin-right:6px; }
+
+@media (max-width:700px){
+  .waypoint-strip{ flex-direction:column; gap:16px; }
+  .waypoint-marker::after{ display:none; }
+}
+
 /* form */
 .entry{ background:var(--card); border:1px solid var(--line); border-radius:8px; padding:28px 32px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
 .entry input{
@@ -205,6 +243,86 @@ h1 em{ font-style:italic; font-weight:400; color:var(--green-deep); }
       <div class="job-role"><b>Proof</b>Closes the last doubt before signature — someone else's word, with a number attached.</div>
       <div class="job-role"><b>Product</b>Final step before conversion — removes the remaining unknowns so day one has no surprises.</div>
     </div>
+
+    <details class="capsule-toggle">
+      <summary>View the full Content Capsule framework</summary>
+      <div class="capsule-toggle-body">
+        <div class="waypoint-strip">
+          <div class="waypoint-marker"><div class="waypoint-dot"></div><div class="waypoint-index">WAYPOINT 01</div><div class="waypoint-state">Doesn't know it's a problem yet</div></div>
+          <div class="waypoint-marker"><div class="waypoint-dot"></div><div class="waypoint-index">WAYPOINT 02</div><div class="waypoint-state">Knows it's broken, comparing fixes</div></div>
+          <div class="waypoint-marker"><div class="waypoint-dot"></div><div class="waypoint-index">WAYPOINT 03</div><div class="waypoint-state">Evaluating you specifically</div></div>
+          <div class="waypoint-marker"><div class="waypoint-dot"></div><div class="waypoint-index">WAYPOINT 04</div><div class="waypoint-state">Wants proof it actually works</div></div>
+          <div class="waypoint-marker"><div class="waypoint-dot"></div><div class="waypoint-index">WAYPOINT 05</div><div class="waypoint-state">Sold on the idea, picturing day one</div></div>
+        </div>
+
+        <div class="waypoint-cards">
+          <div class="waypoint-card">
+            <div class="wc-tag">01 — Symptom Awareness</div>
+            <div class="wc-title">Name the problem before they do.</div>
+            <div class="wc-audience">For prospects who are problem-unaware — nothing on their to-do list says "fix this."</div>
+            <div class="wc-desc">Written for people who don't yet know something's costing them. It names the quiet expenses of the status quo — the manual hours, the errors that slip through unflagged, the risk sitting untracked — before anyone's gone looking for a fix. The job here isn't to sell anything; it's to make an invisible cost visible, so the status quo starts to look like a choice instead of a default.</div>
+            <div class="wc-sample">
+              <div class="wc-sample-label">Sample from the capsule</div>
+              <div class="wc-sample-title">"Signs your data management is broken"</div>
+              <div class="wc-sample-format">Blog article</div>
+            </div>
+            <div class="wc-job"><b>Job to do</b>Get shared or bookmarked by someone who suddenly recognizes their own situation in it — the "oh, that's us" moment.</div>
+          </div>
+
+          <div class="waypoint-card">
+            <div class="wc-tag">02 — Solution Education</div>
+            <div class="wc-title">Teach them how to shop, before you're in the running.</div>
+            <div class="wc-audience">For prospects who are problem-aware and starting to compare fixes.</div>
+            <div class="wc-desc">For people who know something's broken and have started weighing approaches — manual vs. automated, build vs. buy, this category vs. that one. Lay out the landscape with enough rigor that a skeptical reader trusts the source. This is where expertise gets demonstrated rather than claimed: clear problem framing and honest tradeoffs between options, before your product ever enters the frame.</div>
+            <div class="wc-sample">
+              <div class="wc-sample-label">Sample from the capsule</div>
+              <div class="wc-sample-title">"AI vs. Manual: a 2025 comparison"</div>
+              <div class="wc-sample-format">Side-by-side comparative guide</div>
+            </div>
+            <div class="wc-job"><b>Job to do</b>Earn trust through fairness — if every option in the comparison looks worse than yours, the reader stops believing you.</div>
+          </div>
+
+          <div class="waypoint-card">
+            <div class="wc-tag">03 — Value Proposition</div>
+            <div class="wc-title">Make the case for why it's you.</div>
+            <div class="wc-audience">For prospects who are solution-aware and now evaluating you by name.</div>
+            <div class="wc-desc">The pivot from "here's the landscape" to "here's why us." States plainly what the product does, what outcome it delivers, and why that outcome beats the alternatives — on features, on experience, or both. This is the one stage in the capsule where a direct competitor comparison is fair game; everywhere else you're building trust, here you're making the argument.</div>
+            <div class="wc-sample">
+              <div class="wc-sample-label">Sample from the capsule</div>
+              <div class="wc-sample-title">"How [X] platform cuts costs 30%"</div>
+              <div class="wc-sample-format">Explainer page / video</div>
+            </div>
+            <div class="wc-job"><b>Job to do</b>Give a prospect who's already comparing vendors a crisp, quotable reason to shortlist you.</div>
+          </div>
+
+          <div class="waypoint-card">
+            <div class="wc-tag">04 — Customer &amp; Data Stories</div>
+            <div class="wc-title">Let someone else say it, with a number attached.</div>
+            <div class="wc-audience">For prospects who believe the pitch and now want independent confirmation.</div>
+            <div class="wc-desc">Someone else's word that it worked, ideally with a metric attached — hours saved, error rate down, revenue recovered. This is the credibility upgrade over your own claims: a real customer's before-and-after, standing in for "trust me." It answers the question every prospect is quietly asking after the value prop — sure, but does it actually work?</div>
+            <div class="wc-sample">
+              <div class="wc-sample-label">Sample from the capsule</div>
+              <div class="wc-sample-title">"[X] automates 90% of tasks"</div>
+              <div class="wc-sample-format">Case study / customer interview</div>
+            </div>
+            <div class="wc-job"><b>Job to do</b>Be specific and quantifiable — a vague testimonial does almost none of the work a real number does.</div>
+          </div>
+
+          <div class="waypoint-card">
+            <div class="wc-tag">05 — Product Deep Dive</div>
+            <div class="wc-title">Help them picture day one.</div>
+            <div class="wc-audience">For prospects who are sold on the idea and need to picture using it.</div>
+            <div class="wc-desc">For people who are convinced and now need to see themselves using the thing. Goes under the hood — how it actually works, what a specific workflow looks like end to end, what a real use case is. Less persuasion, more onboarding-before-onboarding: strip away the remaining unknowns standing between "interested" and "signed."</div>
+            <div class="wc-sample">
+              <div class="wc-sample-label">Sample from the capsule</div>
+              <div class="wc-sample-title">"[X] workflow automation demo"</div>
+              <div class="wc-sample-format">Video demo</div>
+            </div>
+            <div class="wc-job"><b>Job to do</b>Make the product feel already familiar, so the first login has no surprises left in it.</div>
+          </div>
+        </div>
+      </div>
+    </details>
   </div>
 
   <form class="entry" id="entryForm">
