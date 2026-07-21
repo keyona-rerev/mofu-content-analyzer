@@ -118,7 +118,21 @@ async function fetchWithTimeout(url, ms) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
   try {
-    const r = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'Mozilla/5.0 (compatible; MOFUContentAnalyzer/1.0)' } });
+    // Cache-busting query param: many hosts (Netlify, Framer, Vercel, Cloudflare, etc.)
+    // cache pages at the edge keyed by exact URL, and a no-cache *request* header alone
+    // does not force that edge cache to revalidate — only the origin's own response
+    // headers control that. Appending a unique param guarantees a fresh edge hit every
+    // time, which is what fixes the "site shows an old version after a real edit" bug.
+    const bustUrl = url + (url.includes('?') ? '&' : '?') + '_cb=' + Date.now();
+    const r = await fetch(bustUrl, {
+      signal: ctrl.signal,
+      cache: 'no-store',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; MOFUContentAnalyzer/1.0)',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+      },
+    });
     const text = await r.text();
     return { ok: r.ok, status: r.status, text };
   } finally {
