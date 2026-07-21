@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MOFU Content Analyzer — ReRev Labs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --cream:#F7F1E4;
+  --card:#FFFFFF;
+  --ink:#26301F;
+  --ink-soft:#5B6552;
+  --green-deep:#2F5233;
+  --green-mid:#5C8A5E;
+  --green-light:#9DBB9A;
+  --green-accent:#3F6B44;
+  --green-wash:#E7EEE1;
+  --line:#E1D8C2;
+}
+*{ box-sizing:border-box; margin:0; padding:0; }
+body{ background:var(--cream); color:var(--ink); font-family:'IBM Plex Sans', sans-serif; line-height:1.6; -webkit-font-smoothing:antialiased; }
+.wrap{ max-width:1020px; margin:0 auto; padding:64px 32px 110px; }
+
+header{ padding-bottom:40px; border-bottom:1px solid var(--line); margin-bottom:44px; }
+.eyebrow{ font-family:'IBM Plex Mono', monospace; font-size:12px; letter-spacing:0.14em; text-transform:uppercase; color:var(--green-accent); font-weight:600; margin-bottom:16px; }
+h1{ font-family:'Fraunces', serif; font-weight:600; font-size:clamp(30px, 4.4vw, 42px); line-height:1.14; margin:0 0 16px; letter-spacing:-0.01em; max-width:18ch; }
+h1 em{ font-style:italic; font-weight:400; color:var(--green-deep); }
+.lede{ font-size:16px; color:var(--ink-soft); max-width:640px; margin:0 0 28px; }
+.lede b{ color:var(--ink); font-weight:600; }
+
+/* form */
+.entry{ background:var(--card); border:1px solid var(--line); border-radius:8px; padding:28px 32px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+.entry input{
+  flex:1; min-width:220px; font-family:'IBM Plex Mono', monospace; font-size:14px;
+  padding:13px 16px; border:1px solid var(--line); border-radius:6px; background:var(--cream); color:var(--ink);
+}
+.entry input:focus{ outline:2px solid var(--green-mid); outline-offset:1px; }
+.entry button{
+  font-family:'IBM Plex Mono', monospace; font-size:13px; font-weight:600; letter-spacing:0.04em; text-transform:uppercase;
+  background:var(--green-deep); color:var(--cream); border:none; border-radius:6px; padding:14px 22px; cursor:pointer;
+}
+.entry button:hover{ background:var(--green-accent); }
+.entry button:disabled{ opacity:0.6; cursor:default; }
+.entry-note{ width:100%; font-size:12.5px; color:var(--ink-soft); margin-top:4px; }
+.error-msg{ color:#8A5A3F; font-size:13.5px; margin-top:14px; }
+
+#report{ margin-top:52px; display:none; }
+#loading{ margin-top:52px; display:none; text-align:center; color:var(--ink-soft); font-family:'IBM Plex Mono', monospace; font-size:13px; }
+
+/* --- report template (mirrors the manual Lanyard Health pilot run) --- */
+.source-note{ font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--ink-soft); margin-bottom:44px; }
+.overall-panel{ background:var(--card); border:1px solid var(--line); border-radius:8px; padding:36px 40px; margin-bottom:44px; display:grid; grid-template-columns:340px 1fr; gap:36px; align-items:center; }
+.pentagram-col{ display:flex; flex-direction:column; align-items:center; }
+.pentagram-caption{ font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink-soft); margin-top:8px; text-align:center; }
+.overall-num{ font-family:'Fraunces', serif; font-weight:600; font-size:64px; line-height:1; color:var(--green-deep); }
+.overall-num span{ font-size:24px; color:var(--ink-soft); font-weight:400; }
+.overall-label{ font-family:'IBM Plex Mono', monospace; font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink-soft); margin-top:8px; margin-bottom:18px; }
+.min-check{ display:flex; gap:8px; margin-top:16px; flex-wrap:wrap; }
+.min-pill{ font-family:'IBM Plex Mono', monospace; font-size:11px; padding:6px 11px; border-radius:100px; font-weight:600; }
+.min-pill.pass{ background:var(--green-wash); color:var(--green-accent); }
+.min-pill.fail{ background:#F1E4DC; color:#8A5A3F; }
+
+.elements{ display:grid; grid-template-columns:repeat(5, 1fr); gap:10px; margin-bottom:44px; }
+.element{ background:var(--card); border:1px solid var(--line); border-radius:6px; padding:14px 12px; }
+.element .name{ font-family:'Fraunces', serif; font-weight:600; font-size:13.5px; margin-bottom:4px; color:var(--green-deep); }
+.element .desc{ font-size:11px; color:var(--ink-soft); line-height:1.4; }
+
+.categories{ display:flex; flex-direction:column; gap:18px; }
+.cat{ background:var(--card); border:1px solid var(--line); border-radius:8px; padding:32px 36px; }
+.cat-top{ display:grid; grid-template-columns:1fr auto; gap:20px; align-items:start; margin-bottom:14px; }
+.cat-tag{ font-family:'IBM Plex Mono', monospace; font-size:11.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--green-accent); font-weight:600; margin-bottom:8px; }
+.cat-title{ font-family:'Fraunces', serif; font-weight:600; font-size:22px; color:var(--ink); }
+.cat-job{ display:inline-block; margin-top:10px; font-size:13px; color:var(--ink-soft); background:var(--green-wash); border-radius:6px; padding:9px 13px; line-height:1.5; }
+.cat-job b{ color:var(--green-deep); font-weight:600; font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:0.08em; text-transform:uppercase; margin-right:6px; }
+.cat-score{ text-align:right; }
+.cat-score-num{ font-family:'Fraunces', serif; font-weight:600; font-size:38px; line-height:1; }
+.cat-score-num span{ font-size:15px; color:var(--ink-soft); font-weight:400; }
+.cat-count{ margin-top:6px; font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--ink-soft); }
+.cat-count b{ color:var(--ink); }
+.bar-track{ height:6px; background:var(--cream); border:1px solid var(--line); border-radius:100px; margin:18px 0 20px; overflow:hidden; }
+.bar-fill{ height:100%; border-radius:100px; }
+.cat-body{ display:grid; grid-template-columns:1.1fr 0.9fr; gap:32px; }
+.cat-diagnosis{ font-size:14px; color:var(--ink); line-height:1.7; }
+.pieces-found{ background:var(--cream); border:1px solid var(--line); border-radius:6px; padding:18px 20px; }
+.pieces-label{ font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink-soft); margin-bottom:10px; }
+.piece-row{ display:flex; justify-content:space-between; gap:12px; align-items:baseline; padding:9px 0; border-top:1px solid var(--line); font-size:13px; }
+.piece-row:first-of-type{ border-top:none; }
+.piece-row a{ color:var(--ink); text-decoration:none; font-weight:500; }
+.piece-row a:hover{ color:var(--green-accent); text-decoration:underline; }
+.piece-fit{ font-family:'IBM Plex Mono', monospace; font-size:10.5px; color:var(--ink-soft); white-space:nowrap; }
+.piece-none{ font-size:13px; color:var(--ink-soft); font-style:italic; padding:9px 0; }
+
+.sev-strong{ color:var(--green-deep); } .sev-mid{ color:var(--green-mid); } .sev-weak{ color:var(--green-light); }
+.fill-strong{ background:var(--green-deep); } .fill-mid{ background:var(--green-mid); } .fill-weak{ background:var(--green-light); }
+
+.unmatched{ background:var(--card); border:1px dashed var(--line); border-radius:8px; padding:32px 36px; margin-top:6px; }
+.unmatched-intro{ font-size:14px; color:var(--ink-soft); line-height:1.7; margin:12px 0 20px; max-width:74ch; }
+.um-piece{ background:var(--cream); border:1px solid var(--line); border-radius:6px; padding:16px 20px; margin-bottom:12px; }
+.um-piece:last-child{ margin-bottom:0; }
+.um-piece-title a{ color:var(--ink); font-weight:600; font-size:14px; text-decoration:none; }
+.um-piece-title a:hover{ color:var(--green-accent); text-decoration:underline; }
+.um-piece-why{ font-size:13px; color:var(--ink-soft); margin-top:6px; line-height:1.6; }
+
+@media (max-width:860px){
+  .overall-panel{ grid-template-columns:1fr; gap:24px; }
+  .elements{ grid-template-columns:repeat(2,1fr); }
+  .cat-top{ grid-template-columns:1fr; } .cat-score{ text-align:left; } .cat-body{ grid-template-columns:1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">T029 · MOFU Content Analyzer</div>
+    <h1>Does your content <em>do its job</em>?</h1>
+    <p class="lede">Enter a site's blog or content URL. This crawls it, classifies every substantive page into one of five content-capsule jobs, scores each 0–100, and checks the 3-piece minimum per job.</p>
+    <form class="entry" id="entryForm">
+      <input type="text" id="urlInput" placeholder="e.g. lanyardhealth.com/blog" required />
+      <button type="submit" id="submitBtn">Analyze</button>
+      <div class="entry-note">Reads whatever the URL's nav links to (blog index, product pages, etc.) — no login-gated or private content.</div>
+    </form>
+    <div class="error-msg" id="errorMsg" style="display:none;"></div>
+  </header>
+
+  <div id="loading">Crawling and classifying — this can take 10–20 seconds…</div>
+  <div id="report"></div>
+</div>
+
+<script>
+const JOB_ORDER = ['symptom','solution','value','proof','product'];
+const JOB_META = {
+  symptom: {tag:'01 — Symptom Awareness', title:'Naming the hidden cost'},
+  solution:{tag:'02 — Solution Education', title:'Teaching how to evaluate options'},
+  value:   {tag:'03 — Value Proposition',  title:'The product, the outcome, and why you'},
+  proof:   {tag:'04 — Customer & Data Stories', title:'Someone else saying it worked'},
+  product: {tag:'05 — Product Deep Dive',   title:'How the product actually works'},
+};
+const AXIS_LABELS = ['SYMPTOM','SOLUTION','VALUE PROP','PROOF','PRODUCT'];
+
+function sevClass(score){ return score >= 60 ? 'strong' : (score >= 30 ? 'mid' : 'weak'); }
+
+function pentagonPoints(scores, cx, cy, R){
+  return scores.map((s, i) => {
+    const angle = (-90 + i * 72) * Math.PI / 180;
+    const r = R * Math.max(0, Math.min(100, s)) / 100;
+    return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)];
+  });
+}
+function ringPoints(cx, cy, r){
+  return [0,1,2,3,4].map(i => {
+    const angle = (-90 + i * 72) * Math.PI / 180;
+    return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)];
+  });
+}
+function ptsToStr(pts){ return pts.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' '); }
+
+function buildPentagramSVG(scores){
+  const cx = 170, cy = 170, R = 140;
+  const rings = [0.2,0.4,0.6,0.8,1.0].map((f,i) =>
+    `<polygon points="${ptsToStr(ringPoints(cx,cy,R*f))}" fill="none" stroke="${i===4?'#C9BE9E':'#E1D8C2'}" stroke-width="${i===4?1.3:1}"/>`
+  ).join('');
+  const outer = ringPoints(cx, cy, R);
+  const axes = outer.map(p => `<line x1="${cx}" y1="${cy}" x2="${p[0].toFixed(1)}" y2="${p[1].toFixed(1)}" stroke="#E1D8C2" stroke-width="1"/>`).join('');
+  const dataPts = pentagonPoints(scores, cx, cy, R);
+  const dataPoly = `<polygon points="${ptsToStr(dataPts)}" fill="#3F6B44" fill-opacity="0.22" stroke="#2F5233" stroke-width="2.2" stroke-linejoin="round"/>`;
+  const dotColor = (s) => s>=60 ? '#5C8A5E' : (s>=30 ? '#9DBB9A' : '#C9BE9E');
+  const dots = dataPts.map((p,i) => `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="4.5" fill="${dotColor(scores[i])}"/>`).join('');
+
+  const labelR = R + 25;
+  const labelPts = ringPoints(cx, cy, labelR);
+  const anchors = ['middle','start','start','end','end'];
+  const dy = [-6, 0, 12, 12, 0];
+  const labels = labelPts.map((p,i) => {
+    const nx = p[0].toFixed(1), ny = (p[1] + dy[i]).toFixed(1);
+    return `<text x="${nx}" y="${ny}" text-anchor="${anchors[i]}" font-family="IBM Plex Mono, monospace" font-size="11" font-weight="600" fill="#26301F">${AXIS_LABELS[i]}</text>
+            <text x="${nx}" y="${(parseFloat(ny)+12)}" text-anchor="${anchors[i]}" font-family="IBM Plex Mono, monospace" font-size="11" fill="${dotColor(scores[i])}">${scores[i]}</text>`;
+  }).join('');
+
+  return `<svg width="300" height="300" viewBox="0 0 340 340" xmlns="http://www.w3.org/2000/svg">
+    ${rings}${axes}${dataPoly}${dots}${labels}
+  </svg>`;
+}
+
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function renderReport(data){
+  const scores = JOB_ORDER.map(k => data.jobs[k].score);
+  const passCount = JOB_ORDER.filter(k => data.jobs[k].min_met).length;
+
+  const pillsHtml = JOB_ORDER.map(k => {
+    const j = data.jobs[k];
+    const cls = j.min_met ? 'pass' : 'fail';
+    const mark = j.min_met ? '\u2713' : '\u2715';
+    return `<div class="min-pill ${cls}">${mark} ${JOB_META[k].tag.split('— ')[1]} — ${j.count} of 3</div>`;
+  }).join('');
+
+  const catCards = JOB_ORDER.map(k => {
+    const j = data.jobs[k];
+    const sc = sevClass(j.score);
+    const rows = j.pieces.length
+      ? j.pieces.map(p => `<div class="piece-row"><a href="${esc(p.url)}" target="_blank">${esc(p.title)}</a><span class="piece-fit">${p.fit === 'strong' ? 'strong fit' : 'loose fit'}</span></div>`).join('')
+      : '';
+    const noneLine = j.count < 3
+      ? `<div class="piece-none">${j.count === 0 ? 'No pieces found doing this job.' : `Only ${j.count} of the 3 minimum found — ${3 - j.count} more needed.`}</div>`
+      : '';
+    return `
+      <article class="cat">
+        <div class="cat-top">
+          <div>
+            <div class="cat-tag">${JOB_META[k].tag}</div>
+            <div class="cat-title">${JOB_META[k].title}</div>
+            <div class="cat-job"><b>The job</b>${esc(j.job)}</div>
+          </div>
+          <div class="cat-score">
+            <div class="cat-score-num sev-${sc}">${j.score}<span>/100</span></div>
+            <div class="cat-count"><b>${j.count}</b> of 3 minimum</div>
+          </div>
+        </div>
+        <div class="bar-track"><div class="bar-fill fill-${sc}" style="width:${j.score}%"></div></div>
+        <div class="cat-body">
+          <div class="cat-diagnosis"><p>${esc(j.diagnosis)}</p></div>
+          <div class="pieces-found">
+            <div class="pieces-label">Pieces doing this job</div>
+            ${rows}${noneLine}
+          </div>
+        </div>
+      </article>`;
+  }).join('');
+
+  const unmatchedHtml = data.unmatched.length ? `
+    <article class="unmatched">
+      <div class="cat-tag">Unmatched — off-strategy</div>
+      <div class="cat-title" style="font-family:'Fraunces',serif;font-weight:600;font-size:22px;">Published content doing none of the five jobs</div>
+      <p class="unmatched-intro">These pages were crawled but don't clear the bar for any of the five capsule jobs strongly enough to count toward them.</p>
+      ${data.unmatched.map(u => `
+        <div class="um-piece">
+          <div class="um-piece-title"><a href="${esc(u.url)}" target="_blank">${esc(u.title)}</a></div>
+          <div class="um-piece-why">${esc(u.reason)}</div>
+        </div>`).join('')}
+    </article>` : '';
+
+  const html = `
+    <div class="source-note">Analyzed: <a href="${esc(data.source_url)}" target="_blank">${esc(data.source_url)}</a> — ${data.pages_crawled} pages crawled.</div>
+    <section class="overall-panel">
+      <div class="pentagram-col">
+        ${buildPentagramSVG(scores)}
+        <div class="pentagram-caption">Strength across the five jobs &middot; rings at 20 / 40 / 60 / 80 / 100</div>
+      </div>
+      <div>
+        <div class="overall-num">${data.composite_score}<span>/100</span></div>
+        <div class="overall-label">Composite capsule health</div>
+        <div style="font-size:14.5px;color:var(--ink);line-height:1.7;">
+          <p>${passCount} of 5 jobs clear the 3-piece minimum.</p>
+          <div class="min-check">${pillsHtml}</div>
+        </div>
+      </div>
+    </section>
+    <section class="elements">
+      <div class="element"><div class="name">Symptom</div><div class="desc">The hidden cost of doing nothing.</div></div>
+      <div class="element"><div class="name">Solution</div><div class="desc">How to evaluate options at all.</div></div>
+      <div class="element"><div class="name">Value Proposition</div><div class="desc">Why you specifically, not just why help.</div></div>
+      <div class="element"><div class="name">Proof</div><div class="desc">Customer stories and data, not claims.</div></div>
+      <div class="element"><div class="name">Product</div><div class="desc">How it actually works day to day.</div></div>
+    </section>
+    <section class="categories">${catCards}</section>
+    ${unmatchedHtml}
+  `;
+  document.getElementById('report').innerHTML = html;
+  document.getElementById('report').style.display = 'block';
+}
+
+document.getElementById('entryForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const url = document.getElementById('urlInput').value.trim();
+  const btn = document.getElementById('submitBtn');
+  const err = document.getElementById('errorMsg');
+  const loading = document.getElementById('loading');
+  const report = document.getElementById('report');
+  err.style.display = 'none';
+  report.style.display = 'none';
+  if (!url) return;
+  btn.disabled = true;
+  loading.style.display = 'block';
+  try {
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Something went wrong.');
+    renderReport(data);
+  } catch (ex) {
+    err.textContent = ex.message || 'Something went wrong.';
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    loading.style.display = 'none';
+  }
+});
+</script>
+
+</body>
+</html>
