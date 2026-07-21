@@ -24,8 +24,22 @@
 // until status is "done" or "error".
 
 const { connectLambda, getStore } = require('@netlify/blobs');
-const chromium = require('@sparticuz/chromium');
-const puppeteer = require('puppeteer-core');
+
+// @sparticuz/chromium v149+ and puppeteer-core v25+ are ESM-ONLY packages —
+// a top-level require() of them crashes this CJS function at cold start,
+// BEFORE the handler runs, so no error can ever be written to Blobs and the
+// client polls "pending" forever. Dynamic import() from CJS is supported, so
+// they're loaded lazily inside the handler instead. (Learned live 2026-07-21.)
+let chromium = null;
+let puppeteer = null;
+async function loadBrowserDeps() {
+  if (!chromium) {
+    const chromiumMod = await import('@sparticuz/chromium');
+    chromium = chromiumMod.default ?? chromiumMod;
+    const puppeteerMod = await import('puppeteer-core');
+    puppeteer = puppeteerMod.default ?? puppeteerMod;
+  }
+}
 
 const MAX_PAGES = 18;
 const NAV_TIMEOUT_MS = 20000; // per-page render budget — generous since we're in a 15-min function now
@@ -90,6 +104,7 @@ function filterLinks(rawHrefs, baseUrl, hostname) {
 }
 
 async function launchBrowser() {
+  await loadBrowserDeps();
   return puppeteer.launch({
     args: chromium.args,
     defaultViewport: chromium.defaultViewport,
