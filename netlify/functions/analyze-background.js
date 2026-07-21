@@ -17,11 +17,25 @@
 // function writes its result to Netlify Blobs when done, and the front end
 // polls analyze-status.js with the job id until it's there.
 //
+// TWO-STAGE ANALYSIS (added 2026-07-21):
+//   Stage 1 — read the site's CORE pages (home, services, about) and write an
+//   explicit business profile: the problem solved, how, and for whom — held
+//   to the definition "a business solves a problem for a qualified audience."
+//   Stage 2 — score the CONTENT pages against that profile, so audience-fit
+//   is measured against who the site says it serves, not a fresh guess.
+//   The profile ships in the report so the benchmark itself is visible.
+//
+// CRAWL LANES (added 2026-07-21): content URLs (blog/resources posts —
+// anything under a content path, or discovered from a content index page)
+// get the bulk of the page budget; core pages (home, services, about) get a
+// small fixed lane. Before this, homepage nav links filled the budget in
+// discovery order and crowded actual blog posts out of the report.
+//
 // FLOW: index.html generates a job id -> POSTs {url, jobId} to
 // /api/analyze-background (this file, returns 202 immediately, keeps running)
-// -> this function renders pages, classifies with Claude, writes the result
-// to Blobs under that job id -> index.html polls /api/analyze-status?id=...
-// until status is "done" or "error".
+// -> this function renders pages, profiles the business, classifies with
+// Claude, writes the result to Blobs under that job id -> index.html polls
+// /api/analyze-status?id=... until status is "done" or "error".
 
 const { connectLambda, getStore } = require('@netlify/blobs');
 
@@ -42,15 +56,16 @@ async function loadBrowserDeps() {
 }
 
 // MEMORY BUDGET (learned live 2026-07-21): Netlify functions run in a fixed
-// ~1GB container. Chromium alone eats most of that; 3 parallel tabs got the
-// function OOM-killed mid-crawl on multi-page sites — an uncatchable death
-// that writes no error blob, so the client saw "pending" forever. A single
-// tab at a time is slower but survives; the 15-minute background budget has
-// plenty of room for 12 sequential renders (~5-15s each).
-const MAX_PAGES = 12;
-const NAV_TIMEOUT_MS = 20000; // per-page render budget — generous since we're in a 15-min function now
+// ~1GB container. Chromium alone eats most of that; parallel tabs got the
+// function OOM-killed mid-crawl — an uncatchable death that writes no error
+// blob, so the client saw "pending" forever. One tab at a time survives; the
+// 15-minute background budget has plenty of room for sequential renders.
+const CONTENT_MAX_PAGES = 14; // blog/resources posts — the content actually being audited
+const CONTEXT_MAX_PAGES = 4;  // home + core pages — feed the business profile, still classified
+const NAV_TIMEOUT_MS = 20000; // per-page render budget
 const CONCURRENCY = 1; // ONE tab at a time — see memory-budget note above; do not raise without re-testing a multi-page site
 const MAX_CHARS_PER_PAGE = 2200;
+const MAX_CHARS_PROFILE_PAGE = 1800;
 
 const JOB_ORDER = ['symptom', 'solution', 'value', 'proof', 'product'];
 
@@ -81,6 +96,10 @@ const MIN_PER_JOB = 3;
 
 const BLOCK_PATH = /\/(login|signin|signup|terms|privacy|cookie-policy|cart|checkout)(\/|$|\?)/i;
 const INDEX_HINT = /\/(blog|resources|insights|articles|content|news|case-studies|guides|learn)(\/|$|\?)/i;
+// A URL is CONTENT (an individual post/piece) when it has a slug UNDER one of
+// the content-index segments — /blog/some-post is content, /blog itself is a
+// core/index page, /services is core.
+const CONTENT_PATH = /^\/(blog|resources|insights|articles|content|news|case-studies|guides|learn)\/.+/i;
 const ASSET_EXT = /\.(css|js|mjs|json|xml|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|pdf|zip|mp4|mp3|wav|avif)$/i;
 
 function normalizeUrl(href, base) {
@@ -107,6 +126,14 @@ function filterLinks(rawHrefs, baseUrl, hostname) {
     } catch { /* skip */ }
   }
   return links;
+}
+
+function isContentUrl(url) {
+  try {
+    return CONTENT_PATH.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
 }
 
 async function launchBrowser() {
@@ -169,67 +196,121 @@ async function crawl(seedUrl) {
   const browser = await launchBrowser();
 
   try {
+    // Two lanes: content pieces (audited) vs core pages (profile + context).
+    const contentUrls = new Set();
+    const contextUrls = new Set();
+    const addLink = (url, fromContentIndex) => {
+      if (fromContentIndex || isContentUrl(url)) contentUrls.add(url);
+      else contextUrls.add(url);
+    };
+
     const seedRender = await renderPage(browser, seed);
     if (!seedRender.ok) throw new Error(`Could not render ${seed}: ${seedRender.error}`);
-
-    const candidateLinks = filterLinks(seedRender.hrefs, seed, hostname);
+    filterLinks(seedRender.hrefs, seed, hostname).forEach((l) => addLink(l, false));
 
     const homeUrl = normalizeUrl(new URL(seed).origin, seed);
     let homeRender = null;
     if (homeUrl && homeUrl !== seed) {
       homeRender = await renderPage(browser, homeUrl);
-      if (homeRender.ok) filterLinks(homeRender.hrefs, homeUrl, hostname).forEach((l) => candidateLinks.add(l));
+      if (homeRender.ok) filterLinks(homeRender.hrefs, homeUrl, hostname).forEach((l) => addLink(l, false));
     }
 
-    // Expand any index-like page (e.g. /blog) one level to pick up individual posts.
-    const indexLike = [...candidateLinks].filter((l) => INDEX_HINT.test(new URL(l).pathname)).slice(0, 5);
+    // Expand any index-like page (e.g. /blog) one level to pick up individual
+    // posts — links discovered here go to the CONTENT lane regardless of path
+    // shape, since they were found on a content index.
+    const indexLike = [...contentUrls, ...contextUrls]
+      .filter((l) => INDEX_HINT.test(new URL(l).pathname))
+      .slice(0, 5);
     const expandResults = await mapWithConcurrency(indexLike, CONCURRENCY, (l) => renderPage(browser, l));
     expandResults.forEach((res, i) => {
-      if (res.ok) filterLinks(res.hrefs, indexLike[i], hostname).forEach((l) => candidateLinks.add(l));
+      if (res.ok) filterLinks(res.hrefs, indexLike[i], hostname).forEach((l) => addLink(l, true));
     });
 
-    candidateLinks.add(seed);
-    if (homeUrl) candidateLinks.add(homeUrl);
+    // Seed + home always included; anything in the content lane can't also
+    // occupy a context slot.
+    (isContentUrl(seed) ? contentUrls : contextUrls).add(seed);
+    if (homeUrl) contextUrls.add(homeUrl);
+    contentUrls.forEach((u) => contextUrls.delete(u));
 
-    const pageUrls = [...candidateLinks].slice(0, MAX_PAGES);
+    // Content gets the big lane, core pages the small one — this is the fix
+    // for service pages crowding blog posts out of the budget.
+    const pageEntries = [];
+    const seen = new Set();
+    [...contentUrls].slice(0, CONTENT_MAX_PAGES).forEach((u) => {
+      if (!seen.has(u)) { seen.add(u); pageEntries.push({ url: u, kind: 'content' }); }
+    });
+    [...contextUrls].slice(0, CONTEXT_MAX_PAGES).forEach((u) => {
+      if (!seen.has(u)) { seen.add(u); pageEntries.push({ url: u, kind: 'core' }); }
+    });
 
-    // Reuse the seed/home renders we already did instead of re-rendering them.
+    // Reuse every render we've already done instead of re-rendering.
     const already = new Map();
     already.set(seed, seedRender);
     if (homeUrl && homeRender) already.set(homeUrl, homeRender);
+    indexLike.forEach((u, i) => { if (!already.has(u)) already.set(u, expandResults[i]); });
 
-    const renders = await mapWithConcurrency(pageUrls, CONCURRENCY, async (u) => {
-      if (already.has(u)) return already.get(u);
-      return renderPage(browser, u);
+    const renders = await mapWithConcurrency(pageEntries, CONCURRENCY, async (entry) => {
+      if (already.has(entry.url)) return already.get(entry.url);
+      return renderPage(browser, entry.url);
     });
 
     const pages = [];
     const skipped = [];
     renders.forEach((res, i) => {
+      const entry = pageEntries[i];
       if (res.ok && res.text && res.text.length > 200) {
-        pages.push({ url: pageUrls[i], title: res.title || pageUrls[i], text: res.text });
+        pages.push({ url: entry.url, title: res.title || entry.url, text: res.text, kind: entry.kind });
       } else if (res.ok) {
-        skipped.push({ url: pageUrls[i], title: res.title || pageUrls[i], reason: 'empty_after_render' });
+        skipped.push({ url: entry.url, title: res.title || entry.url, reason: 'empty_after_render' });
       } else {
-        skipped.push({ url: pageUrls[i], title: pageUrls[i], reason: 'render_failed', detail: res.error });
+        skipped.push({ url: entry.url, title: entry.url, reason: 'render_failed', detail: res.error });
       }
     });
 
-    return { pages, skipped, urls_found: pageUrls.length };
+    return { pages, skipped, urls_found: pageEntries.length };
   } finally {
     await browser.close().catch(() => {});
   }
 }
 
-// ---------- Claude classification (identical rubric to v1) ----------
+// ---------- Claude stage 1: business profile from core pages ----------
 
-function buildPrompt(pages) {
+function buildProfilePrompt(profilePages) {
+  const blocks = profilePages
+    .map((p, i) => `PAGE ${i + 1}\nURL: ${p.url}\nTITLE: ${p.title}\nTEXT:\n${p.text.slice(0, MAX_CHARS_PROFILE_PAGE)}\n`)
+    .join('\n---\n');
+
+  return `You are reading a company's core website pages (home, services, about) to write down who this business is, held to this definition: a business exists to solve a problem for a qualified audience.
+
+CORE PAGES (${profilePages.length}):
+${blocks}
+
+Return ONLY a JSON object, no markdown fences, no preamble, exactly this shape:
+{
+  "who": "1-2 sentences in the form: [Company] helps [the qualified audience] solve [the problem] by [how they solve it]. Plain, specific, no marketing gloss.",
+  "problem": "The problem they solve, in one plain sentence.",
+  "solution": "How they solve it, in one plain sentence.",
+  "audience": "Who specifically they solve it for — the qualified audience, as narrow as the site supports.",
+  "clarity_note": "1 sentence on how clearly the site itself states all this. If you had to infer heavily because the site never says it plainly, say so — that is itself a finding."
+}
+Keep every string under 300 characters. No markdown inside any string. If the pages genuinely don't support a confident answer, still fill every field with your best inference and let clarity_note say the site made you guess.`;
+}
+
+// ---------- Claude stage 2: classification against the profile ----------
+
+function buildPrompt(pages, profile) {
   const jobLines = JOB_ORDER.map((k) => `- ${k} (${JOB_DEF[k].label}): ${JOB_DEF[k].job}`).join('\n');
   const pageBlocks = pages
     .map((p, i) => `PAGE ${i + 1}\nURL: ${p.url}\nTITLE: ${p.title}\nTEXT:\n${p.text}\n`)
     .join('\n---\n');
 
-  return `You are auditing a company's owned content (site pages, blog posts) against a five-job "content capsule" framework used for MOFU (mid-funnel) B2B content strategy. Infer the target buyer/ICP yourself from what the site sells — no separate audience definition is provided.
+  return `You are auditing a company's owned content (site pages, blog posts) against a five-job "content capsule" framework used for MOFU (mid-funnel) B2B content strategy.
+
+BUSINESS PROFILE — derived from this company's own core pages. Score ALL audience fit against THIS profile, not a fresh guess of your own:
+- Who they are: ${profile.who}
+- Problem they solve: ${profile.problem}
+- How they solve it: ${profile.solution}
+- Qualified audience: ${profile.audience}
 
 THE FIVE JOBS:
 ${jobLines}
@@ -239,7 +320,8 @@ RULES:
 - Do not force-fit a borderline page into a job just to inflate its count. A weak/loose fit still counts (mark fit "loose"), but a page that isn't meaningfully doing the job at all goes to unmatched with a one-sentence reason.
 - Flag "split_focus": true on any piece that does its assigned job well for most of its length but then breaks discipline with an unearned product pitch in the close (e.g. an educational piece that suddenly says "this is the problem X was built to solve" or drops a demo-request CTA). Note this in the piece's one-line note.
 - Flag near-duplicate pieces (two pieces that share the same structure/template and could not function as genuinely separate pieces toward the 3-piece minimum) by giving them matching "duplicate_group" values (e.g. "dup-1") — omit this field entirely for pieces with no duplicate.
-- For each job, score 0-100 using these subweights: presence+count (0-40, scaled by how close the piece count is to a 3-piece minimum — pieces in the same duplicate_group only count as ONE toward this), audience fit (0-30, how well matched to the inferred buyer), job completion (0-30, does the content actually accomplish what the job needs, quote-worthy specifics over vague gestures — dock split_focus pieces here).
+- For each job, score 0-100 using these subweights: presence+count (0-40, scaled by how close the piece count is to a 3-piece minimum — pieces in the same duplicate_group only count as ONE toward this), audience fit (0-30, how well the piece speaks to the QUALIFIED AUDIENCE in the business profile above — a well-written piece aimed at the wrong reader scores low here), job completion (0-30, does the content actually accomplish what the job needs FOR that audience, quote-worthy specifics over vague gestures — dock split_focus pieces here).
+- In each job's diagnosis, say how well the pieces inform and advance the profile's qualified audience specifically — not readers in general.
 - A job with 0 pieces scores low (roughly 0-15) even if you're being generous elsewhere — do not round up out of politeness.
 - composite_score is the plain average of the five job scores, rounded to the nearest whole number.
 
@@ -250,7 +332,7 @@ Return ONLY a JSON object, no markdown fences, no preamble, exactly this shape:
 {
   "composite_score": 41,
   "jobs": {
-    "symptom": {"score": 65, "diagnosis": "1-3 sentences on what's working and what's missing, plain prose", "pieces": [{"url": "...", "title": "...", "fit": "strong|loose", "note": "1 short sentence on this specific piece", "split_focus": false, "duplicate_group": null}]},
+    "symptom": {"score": 65, "diagnosis": "1-3 sentences on what's working and what's missing for the profile's audience, plain prose", "pieces": [{"url": "...", "title": "...", "fit": "strong|loose", "note": "1 short sentence on this specific piece", "split_focus": false, "duplicate_group": null}]},
     "solution": {"score": 0, "diagnosis": "...", "pieces": []},
     "value": {"score": 0, "diagnosis": "...", "pieces": []},
     "proof": {"score": 0, "diagnosis": "...", "pieces": []},
@@ -275,7 +357,7 @@ function sanitizeStr(s, max) {
     .slice(0, max);
 }
 
-async function classify(pages) {
+async function callClaude(prompt, maxTokens) {
   const { ANTHROPIC_API_KEY } = process.env;
   if (!ANTHROPIC_API_KEY) throw new Error('Missing ANTHROPIC_API_KEY.');
 
@@ -284,9 +366,9 @@ async function classify(pages) {
     headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
     body: JSON.stringify({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 3200,
+      max_tokens: maxTokens,
       temperature: 0,
-      messages: [{ role: 'user', content: buildPrompt(pages) }],
+      messages: [{ role: 'user', content: prompt }],
     }),
   });
   const data = await r.json();
@@ -298,6 +380,25 @@ async function classify(pages) {
   const m = text.match(/\{[\s\S]*\}/);
   if (!m) throw new Error('No JSON found in Claude response.');
   return JSON.parse(m[0]);
+}
+
+async function profileBusiness(pages) {
+  // Prefer core pages (home/services/about); fall back to whatever exists.
+  const corePages = pages.filter((p) => p.kind === 'core');
+  const profilePages = (corePages.length ? corePages : pages).slice(0, 4);
+  const raw = await callClaude(buildProfilePrompt(profilePages), 700);
+  return {
+    who: sanitizeStr(raw.who, 320),
+    problem: sanitizeStr(raw.problem, 320),
+    solution: sanitizeStr(raw.solution, 320),
+    audience: sanitizeStr(raw.audience, 320),
+    clarity_note: sanitizeStr(raw.clarity_note, 320),
+    derived_from: profilePages.map((p) => p.url),
+  };
+}
+
+async function classify(pages, profile) {
+  return callClaude(buildPrompt(pages, profile), 3200);
 }
 
 exports.handler = async (event) => {
@@ -339,7 +440,11 @@ exports.handler = async (event) => {
       return { statusCode: 200 };
     }
 
-    const parsed = await classify(pages);
+    // Stage 1: who is this business? (benchmark for everything below)
+    const profile = await profileBusiness(pages);
+
+    // Stage 2: classify + score every page against that profile.
+    const parsed = await classify(pages, profile);
     if (!parsed.jobs || typeof parsed.jobs !== 'object') {
       await store.setJSON(jobId, { status: 'error', error: 'The analysis came back in an unexpected shape.' });
       return { statusCode: 200 };
@@ -349,7 +454,10 @@ exports.handler = async (event) => {
       urls_found,
       pages_crawled: pages.length,
       pages_skipped: skipped.length,
+      content_pages: pages.filter((p) => p.kind === 'content').length,
+      core_pages: pages.filter((p) => p.kind === 'core').length,
       source_url: seedUrl,
+      business_profile: profile,
       jobs: {},
       unmatched: [],
       page_inventory: [],
