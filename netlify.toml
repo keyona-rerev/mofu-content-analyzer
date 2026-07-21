@@ -4,7 +4,30 @@
 
 [functions]
   node_bundler = "esbuild"
+  # Puppeteer-core + @sparticuz/chromium ship large native binaries — make
+  # sure they aren't excluded by esbuild's default bundling/treeshaking.
+  external_node_modules = ["puppeteer-core", "@sparticuz/chromium"]
 
+[functions."analyze-background"]
+  # Background functions get a 15-minute execution budget instead of the
+  # standard ~10-26s — required here since real headless-browser rendering
+  # of multiple pages takes far longer than a normal function allows.
+  timeout = 900
+
+# Pretty endpoints: the pages call /api/*, which route to the functions.
+[[redirects]]
+  from = "/api/analyze-background"
+  to = "/.netlify/functions/analyze-background"
+  status = 200
+
+[[redirects]]
+  from = "/api/analyze-status"
+  to = "/.netlify/functions/analyze-status"
+  status = 200
+
+# Legacy v1 endpoint (plain-fetch crawler, no JS rendering) — kept only for
+# rollback/reference, not called by the current front end. See the comment
+# at the top of analyze.js for why it was superseded.
 [[redirects]]
   from = "/api/analyze"
   to = "/.netlify/functions/analyze"
