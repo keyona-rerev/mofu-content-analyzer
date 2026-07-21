@@ -117,6 +117,11 @@ h1 em{ font-style:italic; font-weight:400; color:var(--green-deep); }
 /* --- report template (mirrors the manual Lanyard Health pilot run) --- */
 .source-note{ font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--ink-soft); margin-bottom:28px; }
 
+/* benchmark — "who we think you are" */
+.benchmark{ background:var(--card); border:1px solid var(--line); border-left:4px solid var(--green-accent); border-radius:8px; padding:28px 32px; margin-bottom:44px; }
+.benchmark h2{ font-family:'Fraunces', serif; font-weight:600; font-size:21px; color:var(--ink); margin:6px 0 14px; line-height:1.4; }
+.benchmark-note{ margin-top:16px; font-size:13px; color:var(--ink-soft); line-height:1.6; max-width:74ch; }
+
 /* page inventory — the full "here's every page and what we did with it" list */
 .inventory{ background:var(--card); border:1px solid var(--line); border-radius:8px; padding:28px 32px; margin-bottom:44px; }
 .inventory-head{ display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:10px; margin-bottom:6px; }
@@ -207,7 +212,7 @@ h1 em{ font-style:italic; font-weight:400; color:var(--green-deep); }
   <header>
     <div class="eyebrow">T029 · MOFU Content Analyzer</div>
     <h1>Does your content <em>do its job</em>?</h1>
-    <p class="lede">Enter a site's blog or content URL. This renders it with a real headless browser (so client-rendered sites read correctly too), classifies every substantive page into one of five content-capsule jobs, scores each 0–100, and checks the 3-piece minimum per job.</p>
+    <p class="lede">Enter a site's blog or content URL. This renders it with a real headless browser (so client-rendered sites read correctly too), works out who the business serves from its core pages, classifies every substantive content page into one of five content-capsule jobs, and scores each 0–100 against that audience — plus the 3-piece minimum per job.</p>
   </header>
 
   <div class="explainer">
@@ -329,7 +334,7 @@ h1 em{ font-style:italic; font-weight:400; color:var(--green-deep); }
   <form class="entry" id="entryForm">
     <input type="text" id="urlInput" placeholder="e.g. lanyardhealth.com/blog" required />
     <button type="submit" id="submitBtn">Analyze</button>
-    <div class="entry-note">Reads whatever the URL's nav links to (blog index, product pages, etc.) — no login-gated or private content. Rendered with a real browser, so client-rendered (React/Vue) sites work too. Can take 30–90 seconds for larger sites.</div>
+    <div class="entry-note">Reads whatever the URL's nav links to — blog posts get priority in the crawl budget; home and core pages are read separately to work out who the business serves. Rendered with a real browser, so client-rendered (React/Vue) sites work too. Can take a few minutes for larger sites.</div>
   </form>
   <div class="error-msg" id="errorMsg"></div>
 
@@ -397,6 +402,22 @@ function buildPentagramSVG(scores){
 
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
+function renderProfile(data){
+  const bp = data.business_profile;
+  if (!bp || !bp.who) return '';
+  return `
+    <section class="benchmark">
+      <div class="cat-tag">Benchmark — who we think you are</div>
+      <h2>${esc(bp.who)}</h2>
+      <div class="job-role-list">
+        <div class="job-role"><b>Problem</b>${esc(bp.problem)}</div>
+        <div class="job-role"><b>Solved how</b>${esc(bp.solution)}</div>
+        <div class="job-role"><b>For who</b>${esc(bp.audience)}</div>
+      </div>
+      <p class="benchmark-note">${esc(bp.clarity_note || '')} Every audience-fit score below is measured against this statement — if it reads wrong to you, that usually means your core pages aren't saying it plainly enough for a reader (or a machine) to get it.</p>
+    </section>`;
+}
+
 function renderInventory(data){
   const rows = (data.page_inventory || []).map(p => {
     const isUnmatched = p.assigned_job === 'Unmatched';
@@ -411,13 +432,17 @@ function renderInventory(data){
       </div>`;
   }).join('');
 
+  const laneNote = (data.content_pages != null && data.core_pages != null)
+    ? ` &middot; <b>${data.content_pages}</b> content &middot; <b>${data.core_pages}</b> core`
+    : '';
+
   return `
     <div class="inventory">
       <div class="inventory-head">
         <h2>Every page found</h2>
-        <div class="inventory-count"><b>${data.urls_found ?? data.pages_crawled}</b> URLs found &middot; <b>${data.pages_crawled}</b> had readable content &middot; <b>${data.pages_skipped ?? 0}</b> skipped</div>
+        <div class="inventory-count"><b>${data.urls_found ?? data.pages_crawled}</b> URLs found &middot; <b>${data.pages_crawled}</b> had readable content${laneNote} &middot; <b>${data.pages_skipped ?? 0}</b> skipped</div>
       </div>
-      <div class="inventory-sub">One row per page crawled — where it landed and why, before you get to the per-job breakdown below.</div>
+      <div class="inventory-sub">One row per page crawled — where it landed and why, before you get to the per-job breakdown below. Blog/content pages get priority in the crawl budget; home and core pages ride along to anchor the benchmark above.</div>
       <div class="inv-table">${rows}</div>
     </div>`;
 }
@@ -489,6 +514,7 @@ function renderReport(data){
 
   const html = `
     <div class="source-note">Analyzed: <a href="${esc(data.source_url)}" target="_blank">${esc(data.source_url)}</a></div>
+    ${renderProfile(data)}
     ${renderInventory(data)}
     <section class="overall-panel">
       <div class="pentagram-col">
@@ -580,7 +606,7 @@ document.getElementById('entryForm').addEventListener('submit', async (e) => {
     loadingMain.textContent = 'Rendering pages with a real browser…';
 
     const result = await pollJob(jobId, (elapsedSec) => {
-      loadingSub.textContent = elapsedSec + 's elapsed — headless rendering + classification can take a minute or two on larger sites';
+      loadingSub.textContent = elapsedSec + 's elapsed — headless rendering + two-stage analysis can take a few minutes on larger sites';
     });
 
     if (result.status === 'error') {
