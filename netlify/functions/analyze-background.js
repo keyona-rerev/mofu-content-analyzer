@@ -41,9 +41,15 @@ async function loadBrowserDeps() {
   }
 }
 
-const MAX_PAGES = 18;
+// MEMORY BUDGET (learned live 2026-07-21): Netlify functions run in a fixed
+// ~1GB container. Chromium alone eats most of that; 3 parallel tabs got the
+// function OOM-killed mid-crawl on multi-page sites — an uncatchable death
+// that writes no error blob, so the client saw "pending" forever. A single
+// tab at a time is slower but survives; the 15-minute background budget has
+// plenty of room for 12 sequential renders (~5-15s each).
+const MAX_PAGES = 12;
 const NAV_TIMEOUT_MS = 20000; // per-page render budget — generous since we're in a 15-min function now
-const CONCURRENCY = 3; // parallel browser tabs; kept modest for memory headroom in the function's container
+const CONCURRENCY = 1; // ONE tab at a time — see memory-budget note above; do not raise without re-testing a multi-page site
 const MAX_CHARS_PER_PAGE = 2200;
 
 const JOB_ORDER = ['symptom', 'solution', 'value', 'proof', 'product'];
@@ -105,6 +111,9 @@ function filterLinks(rawHrefs, baseUrl, hostname) {
 
 async function launchBrowser() {
   await loadBrowserDeps();
+  // Disable WebGL/graphics — we only read text and links, and skipping the
+  // graphics stack saves meaningful memory in the 1GB container.
+  chromium.setGraphicsMode = false;
   return puppeteer.launch({
     args: chromium.args,
     defaultViewport: chromium.defaultViewport,
