@@ -30,6 +30,31 @@ h1 em{ font-style:italic; font-weight:400; color:var(--green-deep); }
 .lede{ font-size:16px; color:var(--ink-soft); max-width:640px; margin:0 0 28px; }
 .lede b{ color:var(--ink); font-weight:600; }
 
+/* explainer — what a content capsule is / where it sits in the funnel */
+.explainer{ background:var(--card); border:1px solid var(--line); border-radius:8px; padding:32px 36px; margin-bottom:28px; }
+.explainer h2{ font-family:'Fraunces', serif; font-weight:600; font-size:21px; margin-bottom:12px; color:var(--ink); }
+.explainer p{ font-size:14.5px; color:var(--ink); line-height:1.75; max-width:74ch; }
+.explainer p + p{ margin-top:12px; }
+.explainer b{ color:var(--green-deep); font-weight:600; }
+
+.funnel-strip{ display:flex; align-items:stretch; gap:0; margin:22px 0 24px; flex-wrap:wrap; }
+.funnel-stage{
+  flex:1; min-width:140px; background:var(--cream); border:1px solid var(--line); border-radius:6px;
+  padding:14px 16px; position:relative;
+}
+.funnel-stage.active{ background:var(--green-wash); border-color:var(--green-accent); }
+.funnel-stage-label{ font-family:'IBM Plex Mono', monospace; font-size:10px; letter-spacing:0.1em; text-transform:uppercase; color:var(--ink-soft); margin-bottom:4px; }
+.funnel-stage.active .funnel-stage-label{ color:var(--green-accent); }
+.funnel-stage-name{ font-family:'Fraunces', serif; font-weight:600; font-size:15px; color:var(--ink); margin-bottom:4px; }
+.funnel-stage-desc{ font-size:11.5px; color:var(--ink-soft); line-height:1.4; }
+.funnel-arrow{
+  display:flex; align-items:center; justify-content:center; padding:0 6px; color:var(--ink-soft); font-size:16px; flex-shrink:0;
+}
+
+.job-role-list{ display:flex; flex-direction:column; gap:8px; margin-top:18px; }
+.job-role{ display:flex; gap:12px; align-items:baseline; font-size:13.5px; color:var(--ink); background:var(--cream); border:1px solid var(--line); border-radius:6px; padding:10px 14px; }
+.job-role b{ font-family:'IBM Plex Mono', monospace; font-size:10.5px; letter-spacing:0.06em; text-transform:uppercase; color:var(--green-accent); font-weight:600; white-space:nowrap; }
+
 /* form */
 .entry{ background:var(--card); border:1px solid var(--line); border-radius:8px; padding:28px 32px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
 .entry input{
@@ -107,6 +132,8 @@ h1 em{ font-style:italic; font-weight:400; color:var(--green-deep); }
   .overall-panel{ grid-template-columns:1fr; gap:24px; }
   .elements{ grid-template-columns:repeat(2,1fr); }
   .cat-top{ grid-template-columns:1fr; } .cat-score{ text-align:left; } .cat-body{ grid-template-columns:1fr; }
+  .funnel-strip{ flex-direction:column; }
+  .funnel-arrow{ transform:rotate(90deg); padding:4px 0; }
 }
 </style>
 </head>
@@ -117,13 +144,50 @@ h1 em{ font-style:italic; font-weight:400; color:var(--green-deep); }
     <div class="eyebrow">T029 · MOFU Content Analyzer</div>
     <h1>Does your content <em>do its job</em>?</h1>
     <p class="lede">Enter a site's blog or content URL. This crawls it, classifies every substantive page into one of five content-capsule jobs, scores each 0–100, and checks the 3-piece minimum per job.</p>
-    <form class="entry" id="entryForm">
-      <input type="text" id="urlInput" placeholder="e.g. lanyardhealth.com/blog" required />
-      <button type="submit" id="submitBtn">Analyze</button>
-      <div class="entry-note">Reads whatever the URL's nav links to (blog index, product pages, etc.) — no login-gated or private content.</div>
-    </form>
-    <div class="error-msg" id="errorMsg" style="display:none;"></div>
   </header>
+
+  <div class="explainer">
+    <h2>What a content capsule actually does</h2>
+    <p>A <b>content capsule</b> is the set of content assets that carry a prospect from not knowing they have a problem to signed — <b>without you having to cover everything live, on a call, every single time.</b> It's leverage: write it once, send it as many times as you have prospects who need it.</p>
+    <p>It sits in the <b>middle of the funnel</b> — after someone's shown some kind of interest (a discovery call, a demo request, a form fill) but before they've decided. That middle stretch is where most of it gets won or lost, and it splits into two jobs:</p>
+
+    <div class="funnel-strip">
+      <div class="funnel-stage">
+        <div class="funnel-stage-label">TOFU</div>
+        <div class="funnel-stage-name">Awareness</div>
+        <div class="funnel-stage-desc">They find you. Ads, SEO, referrals, cold outreach.</div>
+      </div>
+      <div class="funnel-arrow">→</div>
+      <div class="funnel-stage active">
+        <div class="funnel-stage-label">MOFU · the capsule lives here</div>
+        <div class="funnel-stage-name">Nurture &amp; Conversion</div>
+        <div class="funnel-stage-desc">The call ends without a locked next step. The capsule is what you send instead of going quiet.</div>
+      </div>
+      <div class="funnel-arrow">→</div>
+      <div class="funnel-stage">
+        <div class="funnel-stage-label">BOFU</div>
+        <div class="funnel-stage-name">Decision</div>
+        <div class="funnel-stage-desc">Proposal, pricing, signature.</div>
+      </div>
+    </div>
+
+    <p>Two jobs, one capsule: <b>nurture</b> is what keeps a prospect warm and moving when a live conversation didn't end in a locked calendar invite. <b>Conversion</b> is what finally tips someone from interested to signed — closing the last doubts a call alone couldn't close. Each of the five categories below exists to do one part of that:</p>
+
+    <div class="job-role-list">
+      <div class="job-role"><b>Symptom</b>Opens a nurture sequence for someone with no urgency yet — builds the case that a problem exists at all.</div>
+      <div class="job-role"><b>Solution</b>Mid-sequence, for someone comparing options — teaches them how to evaluate, before you're in the running.</div>
+      <div class="job-role"><b>Value Prop</b>For someone deciding between you and an alternative — makes the direct case for why you.</div>
+      <div class="job-role"><b>Proof</b>Closes the last doubt before signature — someone else's word, with a number attached.</div>
+      <div class="job-role"><b>Product</b>Final step before conversion — removes the remaining unknowns so day one has no surprises.</div>
+    </div>
+  </div>
+
+  <form class="entry" id="entryForm">
+    <input type="text" id="urlInput" placeholder="e.g. lanyardhealth.com/blog" required />
+    <button type="submit" id="submitBtn">Analyze</button>
+    <div class="entry-note">Reads whatever the URL's nav links to (blog index, product pages, etc.) — no login-gated or private content.</div>
+  </form>
+  <div class="error-msg" id="errorMsg" style="display:none;"></div>
 
   <div id="loading">Crawling and classifying — this can take 10–20 seconds…</div>
   <div id="report"></div>
