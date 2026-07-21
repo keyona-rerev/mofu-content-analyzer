@@ -26,10 +26,10 @@
 //   The profile ships in the report so the benchmark itself is visible.
 //
 // CRAWL LANES (added 2026-07-21): content URLs (blog/resources posts —
-// anything under a content path, or discovered from a content index page)
-// get the bulk of the page budget; core pages (home, services, about) get a
-// small fixed lane. Before this, homepage nav links filled the budget in
-// discovery order and crowded actual blog posts out of the report.
+// anything under a content path, or a CHILD of a content index page) get the
+// bulk of the page budget; core pages (home, services, about) get a small
+// fixed lane. Before this, homepage nav links filled the budget in discovery
+// order and crowded actual blog posts out of the report.
 //
 // FLOW: index.html generates a job id -> POSTs {url, jobId} to
 // /api/analyze-background (this file, returns 202 immediately, keeps running)
@@ -216,14 +216,26 @@ async function crawl(seedUrl) {
     }
 
     // Expand any index-like page (e.g. /blog) one level to pick up individual
-    // posts — links discovered here go to the CONTENT lane regardless of path
-    // shape, since they were found on a content index.
+    // posts. Only links that are CHILDREN of the index's own path count as
+    // content — the index page's site-wide nav shows up in its links too.
     const indexLike = [...contentUrls, ...contextUrls]
       .filter((l) => INDEX_HINT.test(new URL(l).pathname))
       .slice(0, 5);
     const expandResults = await mapWithConcurrency(indexLike, CONCURRENCY, (l) => renderPage(browser, l));
     expandResults.forEach((res, i) => {
-      if (res.ok) filterLinks(res.hrefs, indexLike[i], hostname).forEach((l) => addLink(l, true));
+      if (!res.ok) return;
+      let indexPath = '';
+      try { indexPath = new URL(indexLike[i]).pathname.replace(/\/$/, ''); } catch { /* keep '' */ }
+      filterLinks(res.hrefs, indexLike[i], hostname).forEach((l) => {
+        // Only links living UNDER this index's own path are content (e.g.
+        // /blog/some-post found on /blog). The index page's site-wide nav
+        // (/services, /about, /contact) shows up in its links too and must
+        // NOT be laned as content — nav pages stealing content slots is
+        // exactly how service pages crowded blog posts out before.
+        let isChild = false;
+        try { isChild = indexPath !== '' && new URL(l).pathname.startsWith(indexPath + '/'); } catch { /* not a child */ }
+        addLink(l, isChild);
+      });
     });
 
     // Seed + home always included; anything in the content lane can't also
@@ -463,9 +475,13 @@ exports.handler = async (event) => {
       page_inventory: [],
     };
 
+    // The prompt demands each page appear exactly once, but the model
+    // occasionally double-lists a page across two jobs — first assignment
+    // wins, later duplicates are dropped.
+    const assignedUrls = new Set();
     JOB_ORDER.forEach((key) => {
       const j = parsed.jobs[key] || {};
-      const pieces = Array.isArray(j.pieces) ? j.pieces.slice(0, 20).map((p) => ({
+      let pieces = Array.isArray(j.pieces) ? j.pieces.slice(0, 20).map((p) => ({
         url: sanitizeStr(p.url, 300),
         title: sanitizeStr(p.title, 140),
         fit: p.fit === 'strong' ? 'strong' : 'loose',
@@ -473,6 +489,11 @@ exports.handler = async (event) => {
         split_focus: p.split_focus === true,
         duplicate_group: p.duplicate_group ? sanitizeStr(p.duplicate_group, 30) : null,
       })) : [];
+      pieces = pieces.filter((p) => {
+        if (!p.url || assignedUrls.has(p.url)) return false;
+        assignedUrls.add(p.url);
+        return true;
+      });
       clean.jobs[key] = {
         label: JOB_DEF[key].label,
         job: JOB_DEF[key].job,
@@ -495,7 +516,11 @@ exports.handler = async (event) => {
       title: sanitizeStr(u.title, 140),
       reason: sanitizeStr(u.reason, 200),
       duplicate_group: u.duplicate_group ? sanitizeStr(u.duplicate_group, 30) : null,
-    })) : [];
+    })).filter((u) => {
+      if (!u.url || assignedUrls.has(u.url)) return false;
+      assignedUrls.add(u.url);
+      return true;
+    }) : [];
     clean.unmatched.forEach((u) => {
       clean.page_inventory.push({
         url: u.url, title: u.title, assigned_job: 'Unmatched',
