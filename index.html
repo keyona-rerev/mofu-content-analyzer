@@ -18,6 +18,9 @@
   --green-accent:#3F6B44;
   --green-wash:#E7EEE1;
   --line:#E1D8C2;
+  --pink-wash:#FBE9EE;
+  --pink-line:#F0C6D2;
+  --pink-ink:#9A4A62;
 }
 *{ box-sizing:border-box; margin:0; padding:0; }
 body{ background:var(--cream); color:var(--ink); font-family:'IBM Plex Sans', sans-serif; line-height:1.6; -webkit-font-smoothing:antialiased; }
@@ -116,6 +119,7 @@ h1 em{ font-style:italic; font-weight:400; color:var(--green-deep); }
 
 /* --- report template (mirrors the manual Lanyard Health pilot run) --- */
 .source-note{ font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--ink-soft); margin-bottom:28px; }
+.emailed-note{ font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--green-accent); background:var(--green-wash); border:1px solid var(--green-light); border-radius:6px; padding:10px 14px; margin-bottom:28px; }
 
 /* benchmark — "who we think you are" */
 .benchmark{ background:var(--card); border:1px solid var(--line); border-left:4px solid var(--green-accent); border-radius:8px; padding:28px 32px; margin-bottom:44px; }
@@ -129,9 +133,16 @@ h1 em{ font-style:italic; font-weight:400; color:var(--green-deep); }
 .inventory-count{ font-family:'IBM Plex Mono', monospace; font-size:12px; color:var(--ink-soft); }
 .inventory-count b{ color:var(--green-deep); }
 .inventory-sub{ font-size:13px; color:var(--ink-soft); margin-bottom:18px; }
+.inv-legend{ display:inline-flex; align-items:center; gap:7px; white-space:nowrap; }
+.inv-legend .swatch{ width:12px; height:12px; border-radius:3px; background:var(--pink-wash); border:1px solid var(--pink-line); display:inline-block; }
 .inv-table{ display:flex; flex-direction:column; }
 .inv-row{ display:grid; grid-template-columns:1.6fr 1fr 1.4fr; gap:14px; padding:11px 0; border-top:1px solid var(--line); align-items:baseline; }
 .inv-row:first-child{ border-top:none; }
+/* pages that do NOT count toward the score get the full pink block treatment */
+.inv-row.not-counted{ background:var(--pink-wash); border:1px solid var(--pink-line); border-top:1px solid var(--pink-line); border-radius:6px; padding:11px 14px; margin-top:8px; }
+.inv-row.not-counted .inv-page a{ color:var(--pink-ink); }
+.inv-row.not-counted .inv-job{ color:var(--pink-ink); font-weight:600; }
+.inv-row.not-counted .inv-note{ color:var(--pink-ink); opacity:0.85; }
 .inv-page a{ color:var(--ink); font-size:13px; font-weight:500; text-decoration:none; }
 .inv-page a:hover{ color:var(--green-accent); text-decoration:underline; }
 .inv-job{ font-family:'IBM Plex Mono', monospace; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; }
@@ -188,12 +199,13 @@ h1 em{ font-style:italic; font-weight:400; color:var(--green-deep); }
 .sev-strong{ color:var(--green-deep); } .sev-mid{ color:var(--green-mid); } .sev-weak{ color:var(--green-light); }
 .fill-strong{ background:var(--green-deep); } .fill-mid{ background:var(--green-mid); } .fill-weak{ background:var(--green-light); }
 
-.unmatched{ background:var(--card); border:1px dashed var(--line); border-radius:8px; padding:32px 36px; margin-top:6px; }
+.unmatched{ background:var(--pink-wash); border:1px dashed var(--pink-line); border-radius:8px; padding:32px 36px; margin-top:6px; }
+.unmatched .cat-tag{ color:var(--pink-ink); }
 .unmatched-intro{ font-size:14px; color:var(--ink-soft); line-height:1.7; margin:12px 0 20px; max-width:74ch; }
-.um-piece{ background:var(--cream); border:1px solid var(--line); border-radius:6px; padding:16px 20px; margin-bottom:12px; }
+.um-piece{ background:var(--card); border:1px solid var(--pink-line); border-radius:6px; padding:16px 20px; margin-bottom:12px; }
 .um-piece:last-child{ margin-bottom:0; }
-.um-piece-title a{ color:var(--ink); font-weight:600; font-size:14px; text-decoration:none; }
-.um-piece-title a:hover{ color:var(--green-accent); text-decoration:underline; }
+.um-piece-title a{ color:var(--pink-ink); font-weight:600; font-size:14px; text-decoration:none; }
+.um-piece-title a:hover{ text-decoration:underline; }
 .um-piece-why{ font-size:13px; color:var(--ink-soft); margin-top:6px; line-height:1.6; }
 
 @media (max-width:860px){
@@ -332,9 +344,10 @@ h1 em{ font-style:italic; font-weight:400; color:var(--green-deep); }
   </div>
 
   <form class="entry" id="entryForm">
-    <input type="text" id="urlInput" placeholder="e.g. lanyardhealth.com/blog" required />
+    <input type="text" id="urlInput" placeholder="yoursite.com/blog" required />
+    <input type="email" id="emailInput" placeholder="you@company.com" required />
     <button type="submit" id="submitBtn">Analyze</button>
-    <div class="entry-note">Reads whatever the URL's nav links to — blog posts get priority in the crawl budget; home and core pages are read separately to work out who the business serves. Rendered with a real browser, so client-rendered (React/Vue) sites work too. Can take a few minutes for larger sites.</div>
+    <div class="entry-note">Your full report lands in your inbox with a permanent link, and renders right here too. The crawl reads whatever the URL's nav links to — blog posts get priority; home and core pages are read separately to work out who your business serves. Rendered with a real browser, so client-rendered (React/Vue) sites work. Can take a few minutes for larger sites.</div>
   </form>
   <div class="error-msg" id="errorMsg"></div>
 
@@ -425,9 +438,9 @@ function renderInventory(data){
     if (p.split_focus) flags.push('<span class="inv-flag">split focus</span>');
     if (p.duplicate_group) flags.push(`<span class="inv-flag dup">duplicate: ${esc(p.duplicate_group)}</span>`);
     return `
-      <div class="inv-row">
+      <div class="inv-row${isUnmatched ? ' not-counted' : ''}">
         <div class="inv-page"><a href="${esc(p.url)}" target="_blank">${esc(p.title)}</a></div>
-        <div class="inv-job ${isUnmatched ? 'is-unmatched' : 'is-matched'}">${esc(p.assigned_job)}${p.fit ? ' · ' + p.fit : ''}</div>
+        <div class="inv-job ${isUnmatched ? 'is-unmatched' : 'is-matched'}">${isUnmatched ? 'Not counted' : esc(p.assigned_job)}${p.fit ? ' · ' + p.fit : ''}</div>
         <div class="inv-note">${esc(p.note)}${flags.length ? `<div class="inv-flags">${flags.join('')}</div>` : ''}</div>
       </div>`;
   }).join('');
@@ -442,12 +455,12 @@ function renderInventory(data){
         <h2>Every page found</h2>
         <div class="inventory-count"><b>${data.urls_found ?? data.pages_crawled}</b> URLs found &middot; <b>${data.pages_crawled}</b> had readable content${laneNote} &middot; <b>${data.pages_skipped ?? 0}</b> skipped</div>
       </div>
-      <div class="inventory-sub">One row per page crawled — where it landed and why, before you get to the per-job breakdown below. Blog/content pages get priority in the crawl budget; home and core pages ride along to anchor the benchmark above.</div>
+      <div class="inventory-sub">One row per page crawled — where it landed and why. <span class="inv-legend"><span class="swatch"></span>Pink rows were crawled but do <b>not</b> count toward your score.</span></div>
       <div class="inv-table">${rows}</div>
     </div>`;
 }
 
-function renderReport(data){
+function renderReport(data, emailedTo){
   const scores = JOB_ORDER.map(k => data.jobs[k].score);
   const passCount = JOB_ORDER.filter(k => data.jobs[k].min_met).length;
 
@@ -502,9 +515,9 @@ function renderReport(data){
 
   const unmatchedHtml = data.unmatched.length ? `
     <article class="unmatched">
-      <div class="cat-tag">Unmatched — off-strategy</div>
+      <div class="cat-tag">Not counted — off-strategy</div>
       <div class="cat-title" style="font-family:'Fraunces',serif;font-weight:600;font-size:22px;">Published content doing none of the five jobs</div>
-      <p class="unmatched-intro">These pages were crawled but don't clear the bar for any of the five capsule jobs strongly enough to count toward them.</p>
+      <p class="unmatched-intro">These pages were crawled but don't clear the bar for any of the five capsule jobs strongly enough to count toward your score.</p>
       ${data.unmatched.map(u => `
         <div class="um-piece">
           <div class="um-piece-title"><a href="${esc(u.url)}" target="_blank">${esc(u.title)}</a></div>
@@ -512,8 +525,13 @@ function renderReport(data){
         </div>`).join('')}
     </article>` : '';
 
+  const emailedHtml = emailedTo
+    ? `<div class="emailed-note">✓ A copy of this report is on its way to ${esc(emailedTo)} — this page's URL is a permanent link you can share.</div>`
+    : '';
+
   const html = `
     <div class="source-note">Analyzed: <a href="${esc(data.source_url)}" target="_blank">${esc(data.source_url)}</a></div>
+    ${emailedHtml}
     ${renderProfile(data)}
     ${renderInventory(data)}
     <section class="overall-panel">
@@ -576,6 +594,7 @@ async function pollJob(jobId, onTick){
 document.getElementById('entryForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   const url = document.getElementById('urlInput').value.trim();
+  const email = document.getElementById('emailInput').value.trim();
   const btn = document.getElementById('submitBtn');
   const err = document.getElementById('errorMsg');
   const loading = document.getElementById('loading');
@@ -585,7 +604,7 @@ document.getElementById('entryForm').addEventListener('submit', async (e) => {
   err.style.display = 'none';
   err.innerHTML = '';
   report.style.display = 'none';
-  if (!url) return;
+  if (!url || !email) return;
   btn.disabled = true;
   loadingMain.textContent = 'Kicking off the render…';
   loadingSub.textContent = '';
@@ -597,7 +616,7 @@ document.getElementById('entryForm').addEventListener('submit', async (e) => {
     const kickoff = await fetch('/api/analyze-background', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, jobId }),
+      body: JSON.stringify({ url, jobId, email }),
     });
     if (!kickoff.ok && kickoff.status !== 202) {
       throw new Error('Could not start the analysis (server returned ' + kickoff.status + ').');
@@ -620,7 +639,9 @@ document.getElementById('entryForm').addEventListener('submit', async (e) => {
       return;
     }
 
-    renderReport(result);
+    // Make the URL a shareable permalink to this exact report.
+    try { history.replaceState(null, '', '?job=' + encodeURIComponent(jobId)); } catch (ex) { /* non-fatal */ }
+    renderReport(result, email);
   } catch (ex) {
     err.textContent = (ex && ex.message) || 'Something went wrong.';
     err.style.display = 'block';
@@ -629,6 +650,43 @@ document.getElementById('entryForm').addEventListener('submit', async (e) => {
     loading.style.display = 'none';
   }
 });
+
+// Permalink loader: /?job=<id> re-renders a saved report (used by the
+// results email's "View your full report" link).
+(async function loadPermalink(){
+  const params = new URLSearchParams(location.search);
+  const job = params.get('job');
+  if (!job) return;
+  const err = document.getElementById('errorMsg');
+  const loading = document.getElementById('loading');
+  const loadingMain = document.getElementById('loadingMain');
+  const loadingSub = document.getElementById('loadingSub');
+  loadingMain.textContent = 'Loading your saved report…';
+  loadingSub.textContent = '';
+  loading.style.display = 'block';
+  try {
+    const res = await fetch('/api/analyze-status?id=' + encodeURIComponent(job));
+    let data = await res.json();
+    if (data.status === 'pending') {
+      // Analysis still running (someone opened the link early) — keep polling.
+      loadingMain.textContent = 'Your analysis is still running…';
+      data = await pollJob(job, (elapsedSec) => {
+        loadingSub.textContent = elapsedSec + 's elapsed';
+      });
+    }
+    if (data.status === 'done') {
+      renderReport(data, null);
+    } else {
+      err.textContent = data.error || 'That report link has expired or the analysis never finished.';
+      err.style.display = 'block';
+    }
+  } catch (ex) {
+    err.textContent = 'Could not load that report. The link may be malformed.';
+    err.style.display = 'block';
+  } finally {
+    loading.style.display = 'none';
+  }
+})();
 </script>
 
 </body>
