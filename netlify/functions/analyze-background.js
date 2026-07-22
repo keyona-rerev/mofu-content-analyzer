@@ -31,11 +31,21 @@
 // fixed lane. Before this, homepage nav links filled the budget in discovery
 // order and crowded actual blog posts out of the report.
 //
-// FLOW: index.html generates a job id -> POSTs {url, jobId} to
+// EMAIL + LEAD CAPTURE (added 2026-07-21): if the kickoff includes an email,
+// the finished report is emailed to the user via Resend (with a permalink
+// back to the live report at /?job=<id>), a lead notification goes to
+// LEAD_NOTIFY_EMAIL, and the lead is stored in the 'mofu-analyzer-leads'
+// Blobs store. All strictly fail-soft: the report blob is written FIRST, and
+// nothing in the email path is allowed to break the analysis. Requires
+// RESEND_API_KEY (and ideally RESEND_FROM on a verified domain) in the
+// site's environment variables — without the key, emailing silently no-ops.
+//
+// FLOW: index.html generates a job id -> POSTs {url, jobId, email} to
 // /api/analyze-background (this file, returns 202 immediately, keeps running)
 // -> this function renders pages, profiles the business, classifies with
-// Claude, writes the result to Blobs under that job id -> index.html polls
-// /api/analyze-status?id=... until status is "done" or "error".
+// Claude, writes the result to Blobs under that job id, emails the report ->
+// index.html polls /api/analyze-status?id=... until status is "done" or
+// "error", and /?job=<id> reloads any saved report as a permalink.
 
 const { connectLambda, getStore } = require('@netlify/blobs');
 
@@ -66,6 +76,8 @@ const NAV_TIMEOUT_MS = 20000; // per-page render budget
 const CONCURRENCY = 1; // ONE tab at a time — see memory-budget note above; do not raise without re-testing a multi-page site
 const MAX_CHARS_PER_PAGE = 2200;
 const MAX_CHARS_PROFILE_PAGE = 1800;
+
+const REPORT_BASE_URL = 'https://contentcapsule.netlify.app';
 
 const JOB_ORDER = ['symptom', 'solution', 'value', 'proof', 'product'];
 
@@ -413,6 +425,90 @@ async function classify(pages, profile) {
   return callClaude(buildPrompt(pages, profile), 3200);
 }
 
+// ---------- Resend: results email + lead capture (fail-soft) ----------
+
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function resultsEmailHtml(reportUrl, clean) {
+  const bp = clean.business_profile || {};
+  const rows = JOB_ORDER.map((k) => {
+    const j = clean.jobs[k];
+    const color = j.score >= 60 ? '#2F5233' : (j.score >= 30 ? '#5C8A5E' : '#B0533A');
+    return `<tr>
+      <td style="padding:10px 14px;border-bottom:1px solid #E1D8C2;font-family:Georgia,serif;font-size:15px;color:#26301F;">${escHtml(j.label)}</td>
+      <td style="padding:10px 14px;border-bottom:1px solid #E1D8C2;text-align:right;font-family:Georgia,serif;font-size:18px;font-weight:bold;color:${color};">${j.score}<span style="font-size:12px;color:#5B6552;font-weight:normal;">/100</span></td>
+      <td style="padding:10px 14px;border-bottom:1px solid #E1D8C2;text-align:right;font-family:monospace;font-size:12px;color:#5B6552;">${j.count} of 3 min</td>
+    </tr>`;
+  }).join('');
+
+  return `<!DOCTYPE html>
+<html><body style="margin:0;padding:0;background:#F7F1E4;">
+<div style="max-width:600px;margin:0 auto;padding:36px 24px;">
+  <div style="font-family:monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#3F6B44;font-weight:bold;margin-bottom:14px;">MOFU Content Analyzer &middot; ReRev Labs</div>
+  <h1 style="font-family:Georgia,serif;font-size:26px;color:#26301F;margin:0 0 6px;">Your content capsule score: <span style="color:#2F5233;">${clean.composite_score}/100</span></h1>
+  <p style="font-family:Arial,sans-serif;font-size:14px;color:#5B6552;margin:0 0 24px;">For ${escHtml(clean.source_url)} &middot; ${clean.pages_crawled} pages analyzed</p>
+
+  <div style="background:#FFFFFF;border:1px solid #E1D8C2;border-left:4px solid #3F6B44;border-radius:8px;padding:20px 24px;margin-bottom:20px;">
+    <div style="font-family:monospace;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:#3F6B44;font-weight:bold;margin-bottom:8px;">Who we think you are</div>
+    <p style="font-family:Georgia,serif;font-size:16px;color:#26301F;line-height:1.5;margin:0;">${escHtml(bp.who || '')}</p>
+  </div>
+
+  <table style="width:100%;border-collapse:collapse;background:#FFFFFF;border:1px solid #E1D8C2;border-radius:8px;margin-bottom:24px;">${rows}</table>
+
+  <a href="${escHtml(reportUrl)}" style="display:inline-block;background:#2F5233;color:#F7F1E4;font-family:monospace;font-size:13px;font-weight:bold;letter-spacing:1px;text-transform:uppercase;text-decoration:none;padding:14px 26px;border-radius:6px;">View your full report</a>
+  <p style="font-family:Arial,sans-serif;font-size:12px;color:#5B6552;margin:20px 0 0;line-height:1.6;">Your full report includes the per-piece breakdown, what each content job is missing, and which published pages aren't counting toward your score.<br><br>Generated by <a href="https://www.rerev.io" style="color:#3F6B44;">ReRev Labs</a> &middot; this link stays live, share it with your team.</p>
+</div>
+</body></html>`;
+}
+
+async function resendSend(key, payload) {
+  const r = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) {
+    const detail = await r.text().catch(() => '');
+    throw new Error(`Resend ${r.status}: ${detail.slice(0, 200)}`);
+  }
+}
+
+async function sendResultsEmail(email, jobId, clean) {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) return; // Resend not configured yet — analysis still completes without email
+  const from = process.env.RESEND_FROM || 'MOFU Analyzer <onboarding@resend.dev>';
+  const reportUrl = `${REPORT_BASE_URL}/?job=${encodeURIComponent(jobId)}`;
+
+  // User's results email and the lead notification are independent — one
+  // failing must not stop the other.
+  try {
+    await resendSend(key, {
+      from,
+      to: [email],
+      subject: `Your MOFU content score: ${clean.composite_score}/100`,
+      html: resultsEmailHtml(reportUrl, clean),
+    });
+  } catch { /* fail-soft */ }
+
+  try {
+    const notify = process.env.LEAD_NOTIFY_EMAIL || 'keyona@rerev.io';
+    await resendSend(key, {
+      from,
+      to: [notify],
+      subject: `New analyzer lead: ${email} (${clean.composite_score}/100)`,
+      html: `<p style="font-family:Arial,sans-serif;font-size:14px;color:#26301F;">New MOFU Analyzer run:</p>
+<ul style="font-family:Arial,sans-serif;font-size:14px;color:#26301F;">
+  <li><b>Email:</b> ${escHtml(email)}</li>
+  <li><b>Site:</b> ${escHtml(clean.source_url)}</li>
+  <li><b>Composite:</b> ${clean.composite_score}/100 (${clean.pages_crawled} pages)</li>
+  <li><b>Report:</b> <a href="${escHtml(reportUrl)}">${escHtml(reportUrl)}</a></li>
+</ul>`,
+    });
+  } catch { /* fail-soft */ }
+}
+
 exports.handler = async (event) => {
   // Blobs is NOT auto-configured for Lambda-compatibility (exports.handler)
   // functions — connectLambda(event) must run before getStore, or the whole
@@ -427,6 +523,7 @@ exports.handler = async (event) => {
 
   const jobId = String(body.jobId || '').trim();
   const rawUrl = String(body.url || '').trim();
+  const email = String(body.email || '').trim().toLowerCase();
   if (!jobId || !rawUrl) return { statusCode: 400, body: 'Missing jobId or url.' };
 
   // From here on, always write SOME terminal state to the blob store, even on
@@ -531,7 +628,25 @@ exports.handler = async (event) => {
     const scores = JOB_ORDER.map((k) => clean.jobs[k].score);
     clean.composite_score = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
 
+    // Report blob is written FIRST — the user's results never depend on email.
     await store.setJSON(jobId, { status: 'done', ...clean });
+
+    // Results email + lead capture, strictly fail-soft.
+    if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      try {
+        await sendResultsEmail(email, jobId, clean);
+      } catch { /* emailing must never break the analysis */ }
+      try {
+        const leads = getStore('mofu-analyzer-leads');
+        await leads.setJSON(`${new Date().toISOString()}_${jobId}`, {
+          email,
+          url: seedUrl,
+          composite_score: clean.composite_score,
+          job_id: jobId,
+          ts: Date.now(),
+        });
+      } catch { /* lead capture must never break the analysis */ }
+    }
   } catch (e) {
     try {
       await store.setJSON(jobId, { status: 'error', error: String((e && e.message) || e).slice(0, 300) });
